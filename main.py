@@ -305,16 +305,27 @@ def print_menu():
     ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
     
     def get_display_width(s):
-        """Calculate the display width of a string, considering Chinese characters and emojis"""
+        """Calculate the display width of a string, considering Unicode characters and emojis"""
+        import unicodedata
         # Remove ANSI color codes
         clean_s = ansi_escape.sub('', s)
         width = 0
-        for c in clean_s:
-            # Chinese characters and some emojis occupy two character widths
-            if ord(c) > 127:
+        
+        # Use unicodedata for better width calculation
+        for char in clean_s:
+            # Check for emoji
+            if unicodedata.category(char) == 'So' and \
+               (0x1F300 <= ord(char) <= 0x1F9FF or 0x2600 <= ord(char) <= 0x26FF):
+                # Emojis typically take 2 display positions
                 width += 2
             else:
-                width += 1
+                # Use East Asian Width property for CJK characters
+                eaw = unicodedata.east_asian_width(char)
+                if eaw in ('W', 'F'):  # Wide or Fullwidth characters
+                    width += 2
+                else:
+                    # Narrow, Halfwidth, Ambiguous, Neutral (includes Cyrillic, Latin, etc.)
+                    width += 1
         return width
     
     max_left_width = 0
@@ -323,39 +334,44 @@ def print_menu():
         max_left_width = max(max_left_width, width)
     
     # Set the starting position of right menu
-    fixed_spacing = 4  # Fixed spacing
+    # Calculate spacing based on terminal width and content
+    fixed_spacing = max(6, int(terminal_width * 0.05))  # At least 6 spaces, or 5% of terminal width
     right_start = max_left_width + fixed_spacing
     
-    # Calculate the number of spaces needed for right menu items
-    spaces_list = []
-    for i in range(len(left_menu)):
-        if i < len(left_menu):
-            left_item = left_menu[i]
-            left_width = get_display_width(left_item)
-            spaces = right_start - left_width
-            spaces_list.append(spaces)
+    # Ensure right menu doesn't go beyond terminal width
+    max_right_width = max(get_display_width(item) for item in right_menu) if right_menu else 0
+    if right_start + max_right_width > terminal_width - 2:
+        # If menu is too wide, reduce spacing but keep minimum
+        right_start = max_left_width + 4
     
     # Print menu items
     max_rows = max(len(left_menu), len(right_menu))
     
     for i in range(max_rows):
-        # Print left menu items
+        line_parts = []
+        
+        # Get left menu item
         if i < len(left_menu):
             left_item = left_menu[i]
-            print(left_item, end='')
+            left_width = get_display_width(left_item)
+            spaces_needed = right_start - left_width
             
-            # Use pre-calculated spaces
-            spaces = spaces_list[i]
+            # Ensure spaces are at least 2
+            if spaces_needed < 2:
+                spaces_needed = 2
+            
+            line_parts.append(left_item)
+            line_parts.append(' ' * spaces_needed)
         else:
             # If left side has no items, print only spaces
-            spaces = right_start
-            print('', end='')
+            line_parts.append(' ' * right_start)
         
-        # Print right menu items
+        # Get right menu item
         if i < len(right_menu):
-            print(' ' * spaces + right_menu[i])
-        else:
-            print()  # Change line
+            line_parts.append(right_menu[i])
+        
+        # Print the complete line
+        print(''.join(line_parts))
     if translator.current_language == 'zh_cn' or translator.current_language == 'zh_tw':
         print(f"{Fore.YELLOW}{'─' * 70}{Style.RESET_ALL}")
     else:
